@@ -1,0 +1,12 @@
+[package]
+name = "coins"
+version = "0.0.1"
+
+[dependencies]
+#Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+Sui = { local = "../../sui/crates/sui-framework/packages/sui-framework" }
+swap = { local = "../" }
+
+[addresses]
+coins = "0x0"
+admin = "0xf145c9f7d4cb4f06ecbb1514c33fb196dc1ff7c6218466ddc67f595c6e0e9e0f"

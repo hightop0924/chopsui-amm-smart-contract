@@ -246,6 +246,31 @@ module swap::implements {
         (coin::from_balance(balance, ctx), return_values)
     }
 
+    /// Remove liquidity from the `Pool` by burning `Coin<LP>`.
+    /// Returns `Coin<X>` and `Coin<Y>`.
+    public(friend) fun remove_liquidity<X, Y>(
+        pool: &mut Pool<X, Y>,
+        lp_coin: Coin<LP<X, Y>>,
+        is_order: bool,
+        ctx: &mut TxContext,
+    ): (Coin<X>, Coin<Y>) {
+        assert!(is_order, ERR_MUST_BE_ORDER);
+
+        let lp_val = coin::value(&lp_coin);
+        assert!(lp_val > 0, ERR_ZERO_AMOUNT);
+
+        let (coin_x_amount, coin_y_amount, lp_supply) = get_reserves_size(pool);
+        let coin_x_out = math::mul_div(coin_x_amount, lp_val, lp_supply);
+        let coin_y_out = math::mul_div(coin_y_amount, lp_val, lp_supply);
+
+        balance::decrease_supply(&mut pool.lp_supply, coin::into_balance(lp_coin));
+
+        (
+            coin::take(&mut pool.coin_x, coin_x_out, ctx),
+            coin::take(&mut pool.coin_y, coin_y_out, ctx)
+        )
+    }
+
     /// Get most used values in a handy way:
     /// - amount of Coin<X>
     /// - amount of Coin<Y>

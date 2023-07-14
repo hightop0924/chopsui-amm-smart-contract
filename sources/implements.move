@@ -10,9 +10,11 @@ module swap::implements {
     use sui::tx_context::{Self, TxContext};
     use sui::transfer::{Self};
     use sui::coin::{Self, Coin};
+    // use sui::event;
 
     use swap::comparator;
     use swap::math;
+    use swap::utils;
 
     friend swap::interface;
 
@@ -49,6 +51,26 @@ module swap::implements {
     /// Insufficient liquidity
     const ERR_INSUFFICIENT_LIQUIDITY_MINTED: u64 = 15;
 
+    const ECoinInsufficient: u64 = 15;
+
+    const ESwapoutCalcInvalid: u64 = 16;
+
+    const ELiquidityInsufficientMinted: u64 = 17;
+
+    const ELiquiditySwapBurnCalcInvalid: u64 = 18;
+
+    const EPoolInvalid: u64 = 19;
+
+    const EAMOUNTINCORRECT: u64 = 20;
+
+    const ERR_INSUFFICIENT_OUTPUT_AMOUNT: u64 = 21;
+
+    const ERR_INSUFFICIENT_INPUT_AMOUNT:u64 = 22;
+
+    const ENotEnough: u64 = 22;
+
+    const EWrongFee: u64 = 23;
+
     const MINIMAL_LIQUIDITY: u64 = 1000;
     const U64_MAX: u64 = 18446744073709551615;
     const MAX_POOL_VALUE: u64 = {
@@ -67,6 +89,8 @@ module swap::implements {
         coin_y: Balance<Y>,
         lp_supply: Supply<LP<X, Y>>,
         min_liquidity: Balance<LP<X, Y>>,
+        fee_numerator: u64,
+        fee_denominator: u64,
     }
 
     /// The global config
@@ -158,7 +182,9 @@ module swap::implements {
             coin_x: balance::zero<X>(),
             coin_y: balance::zero<Y>(),
             lp_supply,
-            min_liquidity: balance::zero<LP<X, Y>>()
+            min_liquidity: balance::zero<LP<X, Y>>(),
+            fee_numerator: 0,
+            fee_denominator: 0,
         };
         bag::add(&mut global.pools, lp_name, new_pool);
     }
@@ -308,4 +334,213 @@ module swap::implements {
             }
         }
     }
+
+    public fun get_trade_fee<X, Y>(pool: &Pool<X, Y>) : (u64, u64) {
+        (pool.fee_numerator, pool.fee_denominator)
+    }
+
+    public(friend) fun set_fee_and_emit_event<CoinTypeA, CoinTypeB>(
+        _: &mut Global,
+        pool: &mut Pool<CoinTypeA, CoinTypeB>,
+        fee_numerator: u64,
+        fee_denominator: u64,
+        _: &mut TxContext
+    ) {
+        pool.fee_numerator = fee_numerator;
+        pool.fee_denominator = fee_denominator;
+
+        // event::emit(SetFeeEvent{
+        //     sender: tx_context::sender(ctx),
+        //     pool_id: object::id(pool),
+        //     fee_numerator,
+        //     fee_denominator,
+        // });
+    }
+
+    public fun set_fee_config<CoinTypeA, CoinTypeB>(
+        global: &mut Global,
+        pool: &mut Pool<CoinTypeA, CoinTypeB>,
+        fee_numerator: u64,
+        fee_denominator: u64,
+        ctx: &mut TxContext
+    ) {
+        assert!(fee_numerator > 0 && fee_denominator > 0, EWrongFee);
+
+        set_fee_and_emit_event(
+            global,
+            pool,
+            fee_numerator,
+            fee_denominator,
+            ctx
+        );
+    }
+
+    fun compute_out<CoinTypeA, CoinTypeB>(pool: &Pool<CoinTypeA, CoinTypeB>, amount_in: u64, is_a_to_b: bool): u64 {
+        let (fee_numerator, fee_denominator) = get_trade_fee(pool);
+        let (reserve_a, reserve_b, _) = get_reserves_size(pool);
+
+        if (is_a_to_b) {
+            utils::get_amount_out(amount_in, reserve_a, reserve_b, fee_numerator, fee_denominator)
+        } else {
+            utils::get_amount_out(amount_in, reserve_b, reserve_a, fee_numerator, fee_denominator)
+        }
+
+    }
+
+    fun compute_in<CoinTypeA, CoinTypeB>(pool: &Pool<CoinTypeA, CoinTypeB>, amount_out: u64, is_a_to_b: bool): u64 {
+        let (fee_numerator, fee_denominator) = get_trade_fee(pool);
+        let (reserve_a, reserve_b, _) = get_reserves_size(pool);
+
+        if (is_a_to_b) {
+            utils::get_amount_in(amount_out, reserve_a, reserve_b, fee_numerator, fee_denominator)
+        } else {
+            utils::get_amount_in(amount_out, reserve_b, reserve_a, fee_numerator, fee_denominator)
+        }
+    }
+
+    /// Swap coins
+    public fun swap<X, Y>(
+        pool: &mut Pool<X, Y>,
+        coins_x_in: Coin<X>,
+        amount_x_out: u64,
+        coins_y_in: Coin<Y>,
+        amount_y_out: u64,
+        ctx: &mut TxContext
+    ): (Coin<X>, Coin<Y>) {
+        let amount_x_in = coin::value(&coins_x_in);
+        let amount_y_in = coin::value(&coins_y_in);
+        assert!(amount_x_in > 0 || amount_y_in > 0, ERR_INSUFFICIENT_INPUT_AMOUNT);
+        assert!(amount_x_out > 0 || amount_y_out > 0, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
+        
+        // let (reserve_x, reserve_y, _) = get_reserves_size(pool);
+        balance::join(&mut pool.coin_x, coin::into_balance(coins_x_in));
+        balance::join(&mut pool.coin_y, coin::into_balance(coins_y_in));
+        let coins_x_out = balance::split(&mut pool.coin_x, amount_x_out);
+        let coins_y_out = balance::split(&mut pool.coin_y, amount_y_out);
+        // let (balance_x, balance_y) = (balance::value(&pool.coin_x), balance::value(&pool.coin_y));
+        // assert_k_increase(balance_x, balance_y, amount_x_in, amount_y_in, reserve_x, reserve_y);
+        // update internal
+        // update_internal(pool, balance_x, balance_y, reserve_x, reserve_y);
+
+        // event
+        // event::emit_event(&mut events.swap_event, SwapEvent {
+        //     amount_x_in,
+        //     amount_y_in,
+        //     amount_x_out,
+        //     amount_y_out,
+        // });
+        
+        (coin::from_balance(coins_x_out, ctx), coin::from_balance(coins_y_out, ctx))
+    }
+
+    /// Swap X to Y
+    /// swap from X to Y
+    public fun swap_coins_for_coins<X, Y>(
+        global: &mut Global,
+        coins_in: Coin<X>,
+        ctx: &mut TxContext
+    ): Coin<Y> {
+        let is_order = is_order<X,Y>();
+        let pool = get_mut_pool<X,Y>(global, is_order);
+        let amount_in = coin::value(&coins_in);
+        let amount_out = compute_out(pool, amount_in, true);
+        let (zero, coins_out);
+        (zero, coins_out) = swap<X, Y>(pool, coins_in, 0, coin::zero(ctx), amount_out, ctx);
+        coin::destroy_zero<X>(zero);
+        coins_out
+    }
+
+    public fun swap_exact_coinA_for_coinB<X, Y>(
+        global: &mut Global,
+        coin_x: Coin<X>,
+        amount_x_in: u64,
+        amount_y_out_min: u64,
+        ctx: &mut TxContext
+    ) {
+        let coins_out;
+        assert!(coin::value(&coin_x) >= amount_x_in, ENotEnough);
+        coins_out = swap_coins_for_coins<X, Y>(global, coin_x, ctx);
+        assert!(coin::value(&coins_out) >= amount_y_out_min, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
+        
+        transfer::public_transfer(
+            coins_out,
+            tx_context::sender(ctx)
+        );
+    }
+
+    public entry fun swap_coinA_for_exact_coinB<X, Y>(
+        global: &mut Global,
+        coin_x: Coin<X>,
+        amount_out: u64,
+        amount_in_max: u64,
+        ctx: &mut TxContext
+    ) {
+        let is_order = is_order<X,Y>();
+        let pool = get_mut_pool<X,Y>(global, is_order);
+        let amount_in = compute_in<X, Y>(pool, amount_out, true);
+        assert!(amount_in <= amount_in_max, ERR_INSUFFICIENT_INPUT_AMOUNT);
+        assert!(coin::value(&coin_x) == amount_in, ENotEnough);
+        let coins_out;
+        coins_out = swap_coins_for_coins<X, Y>(global, coin_x, ctx);
+        transfer::public_transfer(
+            coins_out,
+            tx_context::sender(ctx)
+        );
+    }
+
+    // k should not decrease
+    // fun assert_k_increase(
+    //     balance_x: u64,
+    //     balance_y: u64,
+    //     amount_x_in: u64,
+    //     amount_y_in: u64,
+    //     reserve_x: u64,
+    //     reserve_y: u64,
+    // ) {
+        // let swap_fee = borrow_global<AdminData>(RESOURCE_ACCOUNT_ADDRESS).swap_fee;
+        // let balance_x_adjusted = (balance_x as u128) * 10000 - (amount_x_in as u128) * (swap_fee as u128);
+        // let balance_y_adjusted = (balance_y as u128) * 10000 - (amount_y_in as u128) * (swap_fee as u128);
+        // let balance_xy_old_not_scaled = (reserve_x as u128) * (reserve_y as u128);
+        // let scale = 100000000;
+        // // should be: new_reserve_x * new_reserve_y > old_reserve_x * old_eserve_y
+        // // gas saving
+        // if (
+        //     AnimeSwapPoolV1Library::is_overflow_mul(balance_x_adjusted, balance_y_adjusted)
+        //     || AnimeSwapPoolV1Library::is_overflow_mul(balance_xy_old_not_scaled, scale)
+        // ) {
+        //     let balance_xy_adjusted = u256::mul(u256::from_u128(balance_x_adjusted), u256::from_u128(balance_y_adjusted));
+        //     let balance_xy_old = u256::mul(u256::from_u128(balance_xy_old_not_scaled), u256::from_u128(scale));
+        //     assert!(u256::compare(&balance_xy_adjusted, &balance_xy_old) == 2, ERR_K_ERROR);
+        // } else {
+        //     assert!(balance_x_adjusted * balance_y_adjusted >= balance_xy_old_not_scaled * scale, ERR_K_ERROR)
+        // };
+    // }
+
+    // fun update_internal<X, Y>(
+    //     lp: &mut Pool<X, Y>,
+    //     balance_x: u64, // new reserve value
+    //     balance_y: u64,
+    //     reserve_x: u64, // old reserve value
+    //     reserve_y: u64
+    // )  {
+        // let now = timestamp::now_seconds();
+        // let time_elapsed = ((now - lp.last_block_timestamp) as u128);
+        // if (time_elapsed > 0 && reserve_x != 0 && reserve_y != 0) {
+        //     // allow overflow u128
+        //     let last_price_x_cumulative_delta = uq64x64::to_u128(uq64x64::fraction(reserve_y, reserve_x)) * time_elapsed;
+        //     lp.last_price_x_cumulative = AnimeSwapPoolV1Library::overflow_add(lp.last_price_x_cumulative, last_price_x_cumulative_delta);
+
+        //     let last_price_y_cumulative_delta = uq64x64::to_u128(uq64x64::fraction(reserve_x, reserve_y)) * time_elapsed;
+        //     lp.last_price_y_cumulative = AnimeSwapPoolV1Library::overflow_add(lp.last_price_y_cumulative, last_price_y_cumulative_delta);
+        // };
+        // lp.last_block_timestamp = now;
+        // event
+        // let events = borrow_global_mut<Events<X, Y>>(RESOURCE_ACCOUNT_ADDRESS);
+        // event::emit_event(&mut events.sync_event, SyncEvent {
+        //     reserve_x: balance_x,
+        //     reserve_y: balance_y,
+        //     last_price_x_cumulative: lp.last_price_x_cumulative,
+        //     last_price_y_cumulative: lp.last_price_y_cumulative,
+        // });
+    // }    
 }

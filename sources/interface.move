@@ -1,11 +1,11 @@
 module swap::interface {
     use std::vector;
 
-    use sui::coin::{Coin, value};
+    use sui::coin::{Coin};
     use sui::transfer;
     use sui::tx_context::{Self, TxContext};
 
-    use swap::implements::{Self, Global, LP};
+    use swap::implements::{Self, Global, LP, Pool};
 
     const ERR_NO_PERMISSIONS: u64 = 101;
     const ERR_EMERGENCY: u64 = 102;
@@ -33,7 +33,7 @@ module swap::interface {
 
         let (lp, return_values) = implements::add_liquidity(
             pool,
-            coin_x,
+            coin_x, 
             coin_x_min,
             coin_y,
             coin_y_min,
@@ -100,5 +100,67 @@ module swap::interface {
         //     lp_val
         // )
 
+    }
+
+    public entry fun init_pool<X, Y>(
+        global: &mut Global,
+        _:u64, //fee_numerator: u64,
+        _:u64, //fee_denominator: u64,
+        _: &mut TxContext
+    ) {
+        let is_order = implements::is_order<X, Y>();
+
+        implements::register_pool<X, Y>(
+            global,
+            is_order
+        );
+    }
+
+    public entry fun swap_exact_coinA_for_coinB<X, Y>(
+        global: &mut Global,
+        coin_a: Coin<X>,
+        amount_a_in: u64,
+        amount_b_out_min: u64,
+        ctx: &mut TxContext
+    ) {
+        implements::swap_exact_coinA_for_coinB<X, Y>(
+            global,
+            coin_a,
+            amount_a_in,
+            amount_b_out_min,
+            ctx
+        );
+    }
+
+    public entry fun swap_coinA_for_exact_coinB<X, Y>(
+        global: &mut Global,
+        coin_a: Coin<X>,
+        amount_a_max: u64,
+        amount_b_out: u64,
+        ctx: &mut TxContext
+    ) {
+        implements::swap_coinA_for_exact_coinB<X, Y>(
+            global,
+            coin_a,
+            amount_a_max,
+            amount_b_out,
+            ctx
+        );
+    }
+
+    public entry fun set_fee_config<X, Y>(
+        global: &mut Global,
+        pool: &mut Pool<X, Y>,
+        fee_numerator: u64,
+        fee_denominator: u64,
+        ctx: &mut TxContext
+    ) {
+        implements::set_fee_config<X, Y>(
+            global,
+            pool,
+            fee_numerator,
+            fee_denominator,
+            ctx
+        );
     }
 }

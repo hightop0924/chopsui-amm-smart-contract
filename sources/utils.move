@@ -43,13 +43,4 @@ module swap::utils {
         math::mul_div(amount_a, reserve_b, reserve_a)
     }
 
-    #[test]
-    public entry fun test_get_amount_out() {
-        let amount_in:u64 = 1000000;
-        let reserve_in: u64 = 200006931;
-        let reserve_out: u64 = 201999600;
-        let out = get_amount_out(amount_in, reserve_in, reserve_out, 2, 1000);
-        // debug::print(&out);
-        //assert!(out == 196735475, 3004);
-    }
 }

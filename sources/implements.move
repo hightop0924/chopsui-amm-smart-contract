@@ -499,7 +499,7 @@ module swap::implements {
 
     /// X in and Y out
     /// Requires X < Y
-    public fun get_amounts_in<X, Y>(
+    public(friend) fun get_amounts_in<X, Y>(
         pool:&mut Pool<X, Y>,
         amount_out: u64,
     ): u64 {
@@ -510,7 +510,7 @@ module swap::implements {
 
     /// X in and Y out
     /// Requires X < Y
-    public fun get_amounts_out<X, Y>(
+    public(friend) fun get_amounts_out<X, Y>(
         pool:&mut Pool<X, Y>,
         amount_in: u64,
     ): u64 {

@@ -128,21 +128,31 @@ module swap::interface {
 
         if (is_order) {
             let pool = implements::get_mut_pool<X, Y>(global, is_order);
+
+            // check if amount_out > amount_out_min
+            let amount_out = implements::get_amounts_out<X, Y>(pool, amount_in);
+            assert!(amount_out >= amount_out_min, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
+
             let coins_in = coin::split(&mut coins_in_origin, amount_in, ctx);
             let (zero, coins_out) = implements::swap_coins_for_coins<X, Y>(pool, clock, coins_in, coin::zero(ctx), ctx);
             coin::destroy_zero(zero);
             assert!(coin::value(&coins_out) >= amount_out_min, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
-            // implements::return_remaining_coin(coins_in_origin, ctx);
+
             transfer::public_transfer(coins_in_origin, tx_context::sender(ctx));
             transfer::public_transfer(coins_out, tx_context::sender(ctx));
         }
          else {
             let pool = implements::get_mut_pool<Y, X>(global, !is_order);
+
+            // check if amount_out > amount_out_min
+            let amount_out = implements::get_amounts_out<Y, X>(pool, amount_in);
+            assert!(amount_out >= amount_out_min, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
+
             let coins_in = coin::split(&mut coins_in_origin, amount_in, ctx);
             let (coins_out, zero) = implements::swap_coins_for_coins<Y, X>(pool, clock, coin::zero(ctx), coins_in, ctx);
             coin::destroy_zero(zero);
             assert!(coin::value(&coins_out) >= amount_out_min, ERR_INSUFFICIENT_OUTPUT_AMOUNT);
-            // implements::return_remaining_coin(coins_in, ctx);
+
             transfer::public_transfer(coins_in_origin, tx_context::sender(ctx));
             transfer::public_transfer(coins_out, tx_context::sender(ctx));
         }
@@ -162,18 +172,21 @@ module swap::interface {
         
         if (is_order) {
             let pool = implements::get_mut_pool<X, Y>(global, is_order);
+
             let amount_in = implements::get_amounts_in<X, Y>(pool, amount_out);
             assert!(amount_in <= amount_in_max, ERR_INSUFFICIENT_INPUT_AMOUNT);
-            let coins_in = coin::split(&mut coins_in_origin, amount_in, ctx);
 
+            let coins_in = coin::split(&mut coins_in_origin, amount_in, ctx);
             let (zero, coins_out) = implements::swap_coins_for_coins<X, Y>(pool, clock, coins_in, coin::zero(ctx), ctx);
             coin::destroy_zero(zero);
             implements::return_remaining_coin(coins_in_origin, ctx);
             transfer::public_transfer(coins_out, tx_context::sender(ctx));
         } else {
             let pool = implements::get_mut_pool<Y, X>(global, !is_order);
+
             let amount_in = implements::get_amounts_in<Y, X>(pool, amount_out);
             assert!(amount_in <= amount_in_max, ERR_INSUFFICIENT_INPUT_AMOUNT);
+
             let coins_in = coin::split(&mut coins_in_origin, amount_in, ctx);
             let (coins_out, zero) = implements::swap_coins_for_coins<Y, X>(pool, clock, coin::zero(ctx), coins_in, ctx);
             coin::destroy_zero(zero);
